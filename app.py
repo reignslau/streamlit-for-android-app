@@ -9,16 +9,16 @@ con = duckdb.connect(f"md:TestDB?motherduck_token={motherduck_token}")
 
 # Ensure the required tables exist
 try:
-    # Create 'roster' table (first page)
+    # Create 'roster' table
     con.sql("""
         CREATE TABLE IF NOT EXISTS roster (
-            id TEXT PRIMARY KEY,  -- Ensure 'id' is the primary key
+            id TEXT PRIMARY KEY,
             name TEXT,
             phone TEXT
         )
     """)
 
-    # Create 'bid' table (second page)
+    # Create 'bid' table
     con.sql("""
         CREATE TABLE IF NOT EXISTS bid (
             id TEXT,
@@ -34,17 +34,24 @@ if "page" not in st.session_state:
     st.session_state["page"] = "register"  # Default to first page
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
+if "delete_authenticated" not in st.session_state:
+    st.session_state["delete_authenticated"] = False
 
 def set_page(page):
     st.session_state["page"] = page
 
-def authenticate(password):
+def authenticate(password, for_delete=False):
     if password == "1234567":
-        st.session_state["authenticated"] = True
-        st.success("Password correct")
-        set_page("admin")
+        if for_delete:
+            st.session_state["delete_authenticated"] = True
+            st.success("Password correct for Delete Page")
+        else:
+            st.session_state["authenticated"] = True
+            st.success("Password correct")
+        return True
     else:
-        st.error("Try again")
+        st.error("Incorrect password. Try again.")
+        return False
 
 # First Page: Registration
 if st.session_state["page"] == "register":
@@ -67,7 +74,6 @@ if st.session_state["page"] == "register":
         else:
             st.error("Please fill in all fields.")
 
-    # Button to go to the password-protected admin page
     if st.button("Go to Admin Page"):
         set_page("password")
 
@@ -76,78 +82,93 @@ elif st.session_state["page"] == "password":
     st.title("Admin Login")
     password = st.text_input("Enter Password", type="password")
     if st.button("Submit"):
-        authenticate(password)
+        if authenticate(password):
+            set_page("admin")
 
-# Admin Page (second page, for displaying data)
+# Admin Page
 elif st.session_state["page"] == "admin" and st.session_state["authenticated"]:
     st.title("Admin Dashboard")
 
-    # Search by ID using number_input()
+    # Navigation within admin
+    if st.button("Go to Delete Data Page"):
+        set_page("delete_password")
+
+    # Search by ID
     st.header("Search by ID")
     search_id = st.number_input("Enter ID to Search", min_value=0, step=1)
 
     if st.button("Search"):
         try:
-            # Search data from 'roster' table based on ID
-            roster_query = f"""
-                SELECT * FROM roster WHERE id = '{search_id}'
-            """
+            roster_query = f"SELECT * FROM roster WHERE id = '{search_id}'"
+            bid_query = f"SELECT * FROM bid WHERE id = '{search_id}'"
             roster_df = con.sql(roster_query).df()
-
-            # Search data from 'bid' table based on ID
-            bid_query = f"""
-                SELECT * FROM bids WHERE id = '{search_id}'
-            """
             bid_df = con.sql(bid_query).df()
 
-            # Display results for 'roster'
             if not roster_df.empty:
-                st.write(f"Roster Data for ID: {search_id}")
+                st.write("Roster Data:")
                 st.dataframe(roster_df)
             else:
-                st.warning(f"No data found for ID: {search_id} in roster table.")
+                st.warning("No data found in roster table.")
 
-            # Display results for 'bid'
             if not bid_df.empty:
-                st.write(f"Bid Data for ID: {search_id}")
+                st.write("Bid Data:")
                 st.dataframe(bid_df)
-                total_bid_amount = bid_df['bid'].sum()  # Total amount in bids
-                st.write(f"**Total Bid Amount for ID {search_id}: ${total_bid_amount}**")
+                total_bid = bid_df['bid'].sum()
+                st.write(f"Total Bid Amount: ${total_bid}")
             else:
-                st.warning(f"No data found for ID: {search_id} in bid table.")
-
+                st.warning("No data found in bid table.")
         except Exception as e:
-            st.error(f"Error fetching data: {e}")
+            st.error(f"Error: {e}")
 
-    # Display all 'roster' data if no search is performed
     st.header("All Roster Data")
-    try:
-        all_roster_query = "SELECT * FROM roster"
-        all_roster_df = con.sql(all_roster_query).df()
-        if not all_roster_df.empty:
-            st.dataframe(all_roster_df)
-        else:
-            st.write("No data available in the roster.")
-            st.dataframe(pd.DataFrame(columns=["id", "name", "phone"]))  # Empty DataFrame if no data
-    except Exception as e:
-        st.error(f"Failed to fetch all roster data: {e}")
+    roster_df = con.sql("SELECT * FROM roster").df()
+    st.dataframe(roster_df if not roster_df.empty else pd.DataFrame(columns=["id", "name", "phone"]))
 
-    # Display all 'bid' data if no search is performed
     st.header("All Bid Data")
-    try:
-        all_bid_query = "SELECT * FROM bids"
-        all_bid_df = con.sql(all_bid_query).df()
-        if not all_bid_df.empty:
-            st.dataframe(all_bid_df)
-            total_bid_amount_all = all_bid_df['bid'].sum()  # Total amount in bids for all records
-            st.write(f"**Total Bid Amount for All: ${total_bid_amount_all}**")
-        else:
-            st.write("No data available in the bid table.")
-            st.dataframe(pd.DataFrame(columns=["id", "item_id", "bid"]))  # Empty DataFrame if no data
-    except Exception as e:
-        st.error(f"Failed to fetch all bid data: {e}")
+    bid_df = con.sql("SELECT * FROM bid").df()
+    st.dataframe(bid_df if not bid_df.empty else pd.DataFrame(columns=["id", "item_id", "bid"]))
 
-    # Logout button
     if st.button("Logout"):
         st.session_state["authenticated"] = False
         set_page("register")
+
+# Delete Data Password Page
+elif st.session_state["page"] == "delete_password":
+    st.title("Delete Data - Authentication Required")
+    password = st.text_input("Enter Password", type="password")
+    if st.button("Submit"):
+        if authenticate(password, for_delete=True):
+            set_page("delete")
+
+# Delete Data Page
+elif st.session_state["page"] == "delete" and st.session_state["delete_authenticated"]:
+    st.title("Delete Data")
+
+    # Select the table to delete from
+    table = st.selectbox("Select a Table", options=["roster", "bid"])
+
+    # Show all data from the selected table
+    try:
+        query = f"SELECT * FROM {table}"
+        data_df = con.sql(query).df()
+        if not data_df.empty:
+            st.dataframe(data_df)
+        else:
+            st.warning(f"No data available in {table} table.")
+    except Exception as e:
+        st.error(f"Error fetching data: {e}")
+
+    # Enter the ID to delete
+    delete_id = st.text_input(f"Enter the ID to delete from {table}")
+
+    if st.button("Delete"):
+        try:
+            delete_query = f"DELETE FROM {table} WHERE id = '{delete_id}'"
+            con.sql(delete_query)
+            st.success(f"Data with ID {delete_id} has been deleted from {table} table.")
+        except Exception as e:
+            st.error(f"Error deleting data: {e}")
+
+    # Navigate back to admin
+    if st.button("Back to Admin Dashboard"):
+        set_page("admin")
