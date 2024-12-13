@@ -160,7 +160,7 @@ elif st.session_state["page"] == "delete" and st.session_state["delete_authentic
     st.title("Delete Data")
 
     # Select the table to delete from
-    table = st.selectbox("Select a Table", options=["roster", "bid"])
+    table = st.selectbox("Select a Table", options=["roster", "bids"])
 
     # Show all data from the selected table
     try:
@@ -176,6 +176,7 @@ elif st.session_state["page"] == "delete" and st.session_state["delete_authentic
     # Enter the ID to delete
     delete_id = st.text_input(f"Enter the ID to delete from {table}")
 
+    # Delete a specific ID
     if st.button("Delete"):
         try:
             delete_query = f"DELETE FROM {table} WHERE id = '{delete_id}'"
@@ -183,6 +184,15 @@ elif st.session_state["page"] == "delete" and st.session_state["delete_authentic
             st.success(f"Data with ID {delete_id} has been deleted from {table} table.")
         except Exception as e:
             st.error(f"Error deleting data: {e}")
+
+    # Delete all data from the selected table
+    if st.button("Delete All Data"):
+        try:
+            delete_all_query = f"DELETE FROM {table}"
+            con.sql(delete_all_query)
+            st.success(f"All data has been deleted from the {table} table.")
+        except Exception as e:
+            st.error(f"Error deleting all data: {e}")
 
     # Navigate back to admin
     if st.button("Back to Admin Dashboard"):
