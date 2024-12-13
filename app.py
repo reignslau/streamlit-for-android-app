@@ -9,19 +9,21 @@ con = duckdb.connect(f"md:TestDB?motherduck_token={motherduck_token}")
 
 # Ensure the required tables exist
 try:
+    # Create 'roster' table (first page)
     con.sql("""
-        CREATE TABLE IF NOT EXISTS users (
-            paddle_number TEXT PRIMARY KEY,
+        CREATE TABLE IF NOT EXISTS roster (
+            id TEXT PRIMARY KEY,  -- Ensure 'id' is the primary key
             name TEXT,
             phone TEXT
         )
     """)
+
+    # Create 'bid' table (second page)
     con.sql("""
-        CREATE TABLE IF NOT EXISTS sales (
-            paddle_number TEXT,
-            item_number TEXT,
-            amount INT,
-            FOREIGN KEY (paddle_number) REFERENCES users(paddle_number)
+        CREATE TABLE IF NOT EXISTS bid (
+            id TEXT,
+            item_id TEXT,
+            bid INT
         )
     """)
 except Exception as e:
@@ -29,7 +31,7 @@ except Exception as e:
 
 # Navigation logic using session state
 if "page" not in st.session_state:
-    st.session_state["page"] = "register"
+    st.session_state["page"] = "register"  # Default to first page
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
 
@@ -44,22 +46,22 @@ def authenticate(password):
     else:
         st.error("Try again")
 
-# Registration Page
+# First Page: Registration
 if st.session_state["page"] == "register":
     st.title("Auction Participant Registration")
-    paddle_number = st.text_input("Paddle Number")
+    id = st.text_input("ID")
     name = st.text_input("Name")
     phone = st.text_input("Phone Number")
 
     if st.button("Register"):
-        if paddle_number and name and phone:
+        if id and name and phone:
             query = f"""
-                INSERT INTO users (paddle_number, name, phone)
-                VALUES ('{paddle_number}', '{name}', '{phone}')
+                INSERT INTO roster (id, name, phone)
+                VALUES ('{id}', '{name}', '{phone}')
             """
             try:
                 con.sql(query)
-                st.success(f"Participant {name} with Paddle Number {paddle_number} has been registered successfully!")
+                st.success(f"Participant {name} with ID {id} has been registered successfully!")
             except Exception as e:
                 st.error(f"Error: {e}")
         else:
@@ -76,54 +78,74 @@ elif st.session_state["page"] == "password":
     if st.button("Submit"):
         authenticate(password)
 
-# Admin Page
+# Admin Page (second page, for displaying data)
 elif st.session_state["page"] == "admin" and st.session_state["authenticated"]:
     st.title("Admin Dashboard")
 
-    # Search Sales by Paddle Number
-    st.header("Search Sales by Paddle Number")
-    search_paddle = st.text_input("Enter Paddle Number to Search")
-    if st.button("Search Paddle"):
-        try:
-            search_query = f"""
-                SELECT 
-                    u.paddle_number, u.name, u.phone, s.item_number, s.amount 
-                FROM users AS u 
-                LEFT JOIN sales AS s 
-                ON u.paddle_number = s.paddle_number
-                WHERE u.paddle_number = '{search_paddle}'
-            """
-            search_result = con.sql(search_query).df()
-            
-            if not search_result.empty:
-                st.write(f"Sales for Paddle Number: {search_paddle}")
-                st.dataframe(search_result)
-                total_amount = search_result['amount'].fillna(0).sum()
-                st.write(f"**Total Amount for Paddle {search_paddle}: ${total_amount}**")
-            else:
-                st.warning(f"No data found for Paddle Number {search_paddle}.")
-        except Exception as e:
-            st.error(f"Failed to fetch data: {e}")
+    # Search by ID using number_input()
+    st.header("Search by ID")
+    search_id = st.number_input("Enter ID to Search", min_value=0, step=1)
 
-    # Display all data with totals
-    st.header("All Participant and Sales Data")
+    if st.button("Search"):
+        try:
+            # Search data from 'roster' table based on ID
+            roster_query = f"""
+                SELECT * FROM roster WHERE id = '{search_id}'
+            """
+            roster_df = con.sql(roster_query).df()
+
+            # Search data from 'bid' table based on ID
+            bid_query = f"""
+                SELECT * FROM bids WHERE id = '{search_id}'
+            """
+            bid_df = con.sql(bid_query).df()
+
+            # Display results for 'roster'
+            if not roster_df.empty:
+                st.write(f"Roster Data for ID: {search_id}")
+                st.dataframe(roster_df)
+            else:
+                st.warning(f"No data found for ID: {search_id} in roster table.")
+
+            # Display results for 'bid'
+            if not bid_df.empty:
+                st.write(f"Bid Data for ID: {search_id}")
+                st.dataframe(bid_df)
+                total_bid_amount = bid_df['bid'].sum()  # Total amount in bids
+                st.write(f"**Total Bid Amount for ID {search_id}: ${total_bid_amount}**")
+            else:
+                st.warning(f"No data found for ID: {search_id} in bid table.")
+
+        except Exception as e:
+            st.error(f"Error fetching data: {e}")
+
+    # Display all 'roster' data if no search is performed
+    st.header("All Roster Data")
     try:
-        all_data_query = """
-            SELECT 
-                u.paddle_number, u.name, u.phone, s.item_number, s.amount 
-            FROM users AS u 
-            LEFT JOIN sales AS s 
-            ON u.paddle_number = s.paddle_number
-        """
-        all_data_df = con.sql(all_data_query).df()
-        if not all_data_df.empty:
-            st.dataframe(all_data_df)
-            total_sales_amount = all_data_df['amount'].fillna(0).sum()
-            st.write(f"**Total Amount for All Sales: ${total_sales_amount}**")
+        all_roster_query = "SELECT * FROM roster"
+        all_roster_df = con.sql(all_roster_query).df()
+        if not all_roster_df.empty:
+            st.dataframe(all_roster_df)
         else:
-            st.warning("No data available.")
+            st.write("No data available in the roster.")
+            st.dataframe(pd.DataFrame(columns=["id", "name", "phone"]))  # Empty DataFrame if no data
     except Exception as e:
-        st.error(f"Failed to fetch all data: {e}")
+        st.error(f"Failed to fetch all roster data: {e}")
+
+    # Display all 'bid' data if no search is performed
+    st.header("All Bid Data")
+    try:
+        all_bid_query = "SELECT * FROM bids"
+        all_bid_df = con.sql(all_bid_query).df()
+        if not all_bid_df.empty:
+            st.dataframe(all_bid_df)
+            total_bid_amount_all = all_bid_df['bid'].sum()  # Total amount in bids for all records
+            st.write(f"**Total Bid Amount for All: ${total_bid_amount_all}**")
+        else:
+            st.write("No data available in the bid table.")
+            st.dataframe(pd.DataFrame(columns=["id", "item_id", "bid"]))  # Empty DataFrame if no data
+    except Exception as e:
+        st.error(f"Failed to fetch all bid data: {e}")
 
     # Logout button
     if st.button("Logout"):
