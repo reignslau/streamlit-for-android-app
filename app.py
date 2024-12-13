@@ -18,9 +18,9 @@ try:
         )
     """)
 
-    # Create 'bid' table
+    # Create 'bids' table
     con.sql("""
-        CREATE TABLE IF NOT EXISTS bid (
+        CREATE TABLE IF NOT EXISTS bids (
             id TEXT,
             item_id TEXT,
             bid INT
@@ -93,44 +93,59 @@ elif st.session_state["page"] == "admin" and st.session_state["authenticated"]:
     if st.button("Go to Delete Data Page"):
         set_page("delete_password")
 
+    # Display total bids amount for all data in the "bids" table
+    st.header("Total Bid Amount - All Data")
+    try:
+        total_bid_all = con.sql("SELECT SUM(bid) AS total_bid FROM bids").fetchone()[0] or 0
+        st.write(f"Total Bid Amount (All Data): ${total_bid_all}")
+    except Exception as e:
+        st.error(f"Error fetching total bid amount: {e}")
+
     # Search by ID
     st.header("Search by ID")
-    search_id = st.number_input("Enter ID to Search", min_value=0, step=1)
+    search_id = st.text_input("Enter ID to Search")
 
     if st.button("Search"):
         try:
+            # Query roster and bids data for the specified ID
             roster_query = f"SELECT * FROM roster WHERE id = '{search_id}'"
-            bid_query = f"SELECT * FROM bid WHERE id = '{search_id}'"
+            bid_query = f"SELECT * FROM bids WHERE id = '{search_id}'"
             roster_df = con.sql(roster_query).df()
             bid_df = con.sql(bid_query).df()
 
+            # Display roster data
             if not roster_df.empty:
                 st.write("Roster Data:")
                 st.dataframe(roster_df)
             else:
                 st.warning("No data found in roster table.")
 
+            # Display bids data and calculate total bid amount
             if not bid_df.empty:
-                st.write("Bid Data:")
+                st.write("Bids Data:")
                 st.dataframe(bid_df)
                 total_bid = bid_df['bid'].sum()
-                st.write(f"Total Bid Amount: ${total_bid}")
+                st.write(f"Total Bid Amount (ID: {search_id}): ${total_bid}")
             else:
-                st.warning("No data found in bid table.")
+                st.warning("No data found in bids table.")
         except Exception as e:
             st.error(f"Error: {e}")
 
+    # Display all data from the "roster" table
     st.header("All Roster Data")
     roster_df = con.sql("SELECT * FROM roster").df()
     st.dataframe(roster_df if not roster_df.empty else pd.DataFrame(columns=["id", "name", "phone"]))
 
+    # Display all data from the "bids" table
     st.header("All Bid Data")
-    bid_df = con.sql("SELECT * FROM bid").df()
+    bid_df = con.sql("SELECT * FROM bids").df()
     st.dataframe(bid_df if not bid_df.empty else pd.DataFrame(columns=["id", "item_id", "bid"]))
 
+    # Logout button
     if st.button("Logout"):
         st.session_state["authenticated"] = False
         set_page("register")
+
 
 # Delete Data Password Page
 elif st.session_state["page"] == "delete_password":
